@@ -1,0 +1,11 @@
+services:
+  clash-converter:
+    build: .
+    container_name: clash-converter
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      # 必填：改成你自己的随机字符串，否则重启后旧订阅失效
+      - ENCRYPTION_KEY=change-me-to-a-long-random-string
+    restart: unless-stopped

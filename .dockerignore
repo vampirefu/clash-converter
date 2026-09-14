@@ -1,0 +1,8 @@
+bin/
+obj/
+clash-converter-csharp.Tests/
+.git/
+.gitignore
+.gitattributes
+*.user
+.vs/

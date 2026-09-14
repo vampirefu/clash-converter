@@ -463,36 +463,64 @@ public static class Converter
     public static Dictionary<string, object?> ParseSsr(string url)
     {
         var raw = url.Substring(6);
-        string decoded;
+        var prm = new Dictionary<string, string>();
+        string base64Payload;
+
+        var topQ = raw.IndexOf('?');
+        if (topQ < 0)
+        {
+            // No query string: the whole remainder is the base64 payload.
+            base64Payload = raw;
+        }
+        else
+        {
+            // Convention #1 (modern clients): ssr://base64(payload)?remarks=..&..
+            // The base64 payload sits before '?'; the query carries base64-encoded params.
+            try
+            {
+                B64DecodeString(raw.Substring(0, topQ)); // probe validity
+                base64Payload = raw.Substring(0, topQ);
+                foreach (var kv in ParseQsl(raw.Substring(topQ + 1)))
+                    prm[kv.Key] = TryB64(kv.Value);
+            }
+            catch
+            {
+                // Convention #2 (legacy): the entire remainder (incl. "?...") is base64.
+                string decoded;
+                try
+                {
+                    decoded = B64DecodeString(raw);
+                }
+                catch (Exception ex)
+                {
+                    throw new Exception($"SSR Base64 解码失败: {ex.Message}");
+                }
+
+                var innerQ = decoded.IndexOf('?');
+                if (innerQ >= 0)
+                {
+                    base64Payload = decoded.Substring(0, innerQ);
+                    foreach (var kv in ParseQsl(decoded.Substring(innerQ + 1)))
+                        prm[kv.Key] = TryB64(kv.Value);
+                }
+                else
+                {
+                    base64Payload = decoded;
+                }
+            }
+        }
+
+        string decodedPayload;
         try
         {
-            decoded = B64DecodeString(raw);
+            decodedPayload = B64DecodeString(base64Payload);
         }
         catch (Exception ex)
         {
             throw new Exception($"SSR Base64 解码失败: {ex.Message}");
         }
 
-        var prm = new Dictionary<string, string>();
-        var qIdx = decoded.IndexOf('?');
-        if (qIdx >= 0)
-        {
-            var qs = decoded.Substring(qIdx + 1);
-            decoded = decoded.Substring(0, qIdx);
-            foreach (var kv in ParseQsl(qs))
-            {
-                try
-                {
-                    prm[kv.Key] = B64DecodeString(kv.Value);
-                }
-                catch
-                {
-                    prm[kv.Key] = kv.Value;
-                }
-            }
-        }
-
-        var parts = decoded.Split(':');
+        var parts = decodedPayload.Split(':');
         if (parts.Length < 6)
             throw new Exception("SSR 链接格式不完整");
 
@@ -528,6 +556,20 @@ public static class Converter
             ["obfs-param"] = Q(prm, "obfsparam", ""),
             ["udp"] = true,
         };
+    }
+
+    // Decode as base64 if possible, otherwise return the original string.
+    // Used for SSR query params which may or may not be base64-encoded.
+    private static string TryB64(string s)
+    {
+        try
+        {
+            return B64DecodeString(s);
+        }
+        catch
+        {
+            return s;
+        }
     }
 
     public static Dictionary<string, object?> ParseTrojan(string url)

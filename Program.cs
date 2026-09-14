@@ -23,6 +23,8 @@ var encKey = Environment.GetEnvironmentVariable("ENCRYPTION_KEY")
 Crypto.Initialize(encKey);
 
 builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
 builder.Services.AddCors();
 
 var app = builder.Build();
@@ -36,6 +38,10 @@ app.UseForwardedHeaders(new ForwardedHeadersOptions
 app.UseCors(p => p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
 app.UseDefaultFiles();
 app.UseStaticFiles();
+
+// Swagger / OpenAPI — interactive API docs at /swagger
+app.UseSwagger();
+app.UseSwaggerUI(c => c.SwaggerEndpoint("/swagger/v1/swagger.json", "Clash Converter API v1"));
 
 app.MapGet("/", () => Results.Redirect("/index.html"));
 
@@ -70,7 +76,10 @@ app.MapPost("/api/convert", (ConvertReq req, HttpContext ctx) =>
     {
         return Results.BadRequest(new { error = e.Message });
     }
-});
+})
+.Accepts<ConvertReq>("application/json")
+.Produces<object>(StatusCodes.Status200OK, "application/json")
+.Produces<object>(StatusCodes.Status400BadRequest, "application/json");
 
 // ------------------------------------------------------------------
 // POST /api/to-url  { yaml } -> { proxies: [{name,type,url}], total }
@@ -96,7 +105,10 @@ app.MapPost("/api/to-url", (ToUrlReq req) =>
     {
         return Results.BadRequest(new { error = e.Message });
     }
-});
+})
+.Accepts<ToUrlReq>("application/json")
+.Produces<object>(StatusCodes.Status200OK, "application/json")
+.Produces<object>(StatusCodes.Status400BadRequest, "application/json");
 
 // ------------------------------------------------------------------
 // GET /api/sub?d=<encrypted>  (also supports legacy ?url=<plain>)

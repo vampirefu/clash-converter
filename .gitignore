@@ -2,3 +2,9 @@ bin/
 obj/
 *.user
 .vs/
+/out.log
+/err.log
+/allout.txt
+/smoketest.ps1
+**/testout.txt
+.DS_Store
