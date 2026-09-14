@@ -1,0 +1,1178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Proxy ↔ Clash 双向转换器</title>
+    <link rel="icon" href="/static/favicon.ico">
+    <style>
+        *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+        html { font-size: 16px; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            min-height: 100vh;
+            background: #f8f9fc;
+            display: flex; align-items: flex-start; justify-content: center;
+            padding: 24px; padding-top: min(6vh, 60px); position: relative; overflow-x: hidden;
+            color: #1a1a2e;
+        }
+
+        /* ===== Background ===== */
+        .bg-deco { position: fixed; inset:0; pointer-events:none; z-index:0; overflow:hidden; }
+        .bg-deco .blob {
+            position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.30;
+        }
+        .bg-deco .blob-1 {
+            width:520px; height:520px;
+            background: radial-gradient(circle,#a78bfa,#7c3aed);
+            top:-120px; right:-80px;
+            animation: blobFloat 20s ease-in-out infinite;
+        }
+        .bg-deco .blob-2 {
+            width:400px; height:400px;
+            background: radial-gradient(circle,#60a5fa,#3b82f6);
+            bottom:-100px; left:-60px;
+            animation: blobFloat 25s ease-in-out infinite reverse;
+        }
+        .bg-deco .blob-3 {
+            width:300px; height:300px;
+            background: radial-gradient(circle,#f472b6,#ec4899);
+            top:50%; left:50%; transform:translate(-50%,-50%);
+            animation: blobFloat 18s ease-in-out infinite 5s;
+        }
+        @keyframes blobFloat {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            33% { transform: translate(30px, -40px) scale(1.05); }
+            66% { transform: translate(-20px, 20px) scale(0.95); }
+        }
+
+        /* ===== Theme: Teal (Clash → 代理) ===== */
+        .theme-teal .blob-1 { background:radial-gradient(circle,#2dd4bf,#0d9488); }
+        .theme-teal .blob-2 { background:radial-gradient(circle,#22d3ee,#0891b2); }
+        .theme-teal .header .icon { background:linear-gradient(135deg,#0d9488,#0f766e); box-shadow:0 8px 24px rgba(13,148,136,0.25); }
+        .theme-teal .mode-toggle .mode-slider { background:linear-gradient(135deg,#0d9488,#0f766e); box-shadow:0 4px 14px rgba(13,148,136,0.3); }
+        .theme-teal .yaml-input-wrap textarea:focus { border-color:#0d9488; box-shadow:0 0 0 3px rgba(13,148,136,0.12); }
+        .theme-teal .upload-zone:hover, .theme-teal .upload-zone.dragover { border-color:#0d9488; background:rgba(13,148,136,0.06); }
+        .theme-teal .proxy-results-header .result-count span { color:#0d9488; }
+        .theme-teal .btn-success { background:linear-gradient(135deg,#0d9488,#0f766e); box-shadow:0 4px 14px rgba(13,148,136,0.3); }
+        .theme-teal .btn-success:hover:not(:disabled) { box-shadow:0 6px 24px rgba(13,148,136,0.4); }
+
+        /* ===== Glass Container ===== */
+        .glass-wrap { position:relative; z-index:1; width:100%; max-width:720px; }
+        .glass {
+            background: rgba(255,255,255,0.70);
+            backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
+            border: 1px solid rgba(255,255,255,0.35);
+            border-radius: 28px;
+            box-shadow: 0 12px 48px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.03);
+            padding: 36px 32px;
+            transition: box-shadow 0.3s;
+        }
+
+        /* ===== Header ===== */
+        .header { text-align:center; margin-bottom:24px; }
+        .header .icon {
+            width:56px; height:56px;
+            background: linear-gradient(135deg,#7c3aed,#3b82f6);
+            border-radius:16px;
+            display:inline-flex; align-items:center; justify-content:center;
+            margin-bottom:12px;
+            box-shadow: 0 8px 24px rgba(124,58,237,0.25);
+        }
+        .header .icon svg { width:28px; height:28px; fill:none; stroke:#fff; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+        .header h1 {
+            font-size:1.5rem; font-weight:700; letter-spacing:-0.02em;
+            background: linear-gradient(135deg,#1a1a2e,#4a4a6a);
+            -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
+        }
+        .header p { margin-top:4px; font-size:0.88rem; color:#6b7280; }
+
+        /* ===== Mode Toggle ===== */
+        .mode-toggle {
+            display:flex; background:rgba(229,231,235,0.5);
+            border-radius:40px; padding:4px; margin-bottom:22px;
+            position:relative; user-select:none;
+        }
+        .mode-toggle .mode-btn {
+            flex:1; padding:10px 16px; border:none; border-radius:36px;
+            background:transparent; color:#6b7280; font-size:0.88rem; font-weight:600;
+            cursor:pointer; transition:all 0.3s cubic-bezier(0.4,0,0.2,1);
+            position:relative; z-index:2; text-align:center;
+        }
+        .mode-toggle .mode-btn:hover { color:#4b5563; }
+        .mode-toggle .mode-btn.active { color:#fff; }
+        .mode-toggle .mode-slider {
+            position:absolute; top:4px; bottom:4px;
+            border-radius:36px; z-index:1;
+            background: linear-gradient(135deg,#7c3aed,#6d28d9);
+            transition:all 0.35s cubic-bezier(0.4,0,0.2,1);
+            box-shadow: 0 4px 14px rgba(124,58,237,0.3);
+        }
+        .mode-toggle .mode-slider.left { left:4px; right:50%; }
+        .mode-toggle .mode-slider.right { left:50%; right:4px; }
+
+        /* ===== Panels (stable position, no layout shift) ===== */
+        .panel { display:none; }
+        .panel.active { display:block; animation:panelFadeIn 0.3s ease-out; }
+        @keyframes panelFadeIn { from { opacity:0; } to { opacity:1; } }
+
+        /* ===== Protocol Selector ===== */
+        .proto-selector { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+        .proto-btn {
+            flex:1; min-width:68px; padding:8px 12px;
+            border:1.5px solid #e5e7eb; border-radius:40px;
+            background: rgba(255,255,255,0.5);
+            color:#6b7280; font-size:0.8rem; font-weight:600;
+            cursor:pointer; transition: all 0.2s; text-align:center; user-select:none;
+        }
+        .proto-btn:hover { border-color:#c4b5fd; color:#7c3aed; }
+        .proto-btn.active {
+            background: linear-gradient(135deg,#7c3aed,#6d28d9);
+            border-color:transparent; color:#fff;
+            box-shadow: 0 4px 12px rgba(124,58,237,0.3);
+        }
+        .proto-btn.disabled { pointer-events:none; opacity:0.45; }
+
+        /* ===== Form ===== */
+        .form-group { margin-bottom:16px; }
+        .form-group .label-row { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; }
+        .form-group .label-row label { font-size:0.85rem; font-weight:600; color:#374151; }
+        .input-wrap {
+            display:flex; align-items:center;
+            background: rgba(255,255,255,0.8);
+            border:1.5px solid #e5e7eb; border-radius:14px; padding:0 16px;
+            transition: border-color 0.25s, box-shadow 0.25s;
+        }
+        .input-wrap:focus-within { border-color:#7c3aed; box-shadow:0 0 0 3px rgba(124,58,237,0.12); }
+        .input-wrap svg { width:20px; height:20px; stroke:#9ca3af; stroke-width:1.8; flex-shrink:0; }
+        .input-wrap input {
+            flex:1; border:none; background:transparent;
+            padding:14px 12px; font-size:0.92rem; color:#1a1a2e; outline:none;
+            font-family:"SF Mono","Fira Code","Cascadia Code",monospace;
+        }
+        .input-wrap input::placeholder { color:#aaa; }
+        .input-wrap input:disabled { background:transparent; color:#6b7280; -webkit-text-fill-color:#6b7280; }
+        .input-wrap.locked { border-color:#d1d5db; background: rgba(243,244,246,0.5); }
+
+        /* ===== Textarea ===== */
+        .yaml-input-wrap textarea {
+            width:100%; min-height:180px; resize:vertical;
+            padding:16px; border:1.5px solid #e5e7eb; border-radius:14px;
+            background: rgba(255,255,255,0.8);
+            font-family:"SF Mono","Fira Code","Cascadia Code","Consolas",monospace;
+            font-size:0.82rem; line-height:1.6; color:#1f2937;
+            outline:none; transition: border-color 0.25s, box-shadow 0.25s; tab-size:2;
+        }
+        .yaml-input-wrap textarea:focus { border-color:#7c3aed; box-shadow:0 0 0 3px rgba(124,58,237,0.12); }
+        .yaml-input-wrap textarea::placeholder { color:#aaa; }
+        .yaml-input-wrap textarea.input-error { border-color:#ef4444; box-shadow:0 0 0 3px rgba(239,68,68,0.12); }
+
+        /* ===== Upload Zone ===== */
+        .upload-zone {
+            margin-top:12px; padding:24px 20px;
+            border:2px dashed #d1d5db; border-radius:16px;
+            background: rgba(255,255,255,0.4);
+            text-align:center; cursor:pointer;
+            transition: all 0.25s;
+        }
+        .upload-zone:hover, .upload-zone.dragover { border-color:#7c3aed; background: rgba(124,58,237,0.06); }
+        .upload-zone svg { width:32px; height:32px; stroke:#9ca3af; stroke-width:1.5; margin-bottom:8px; }
+        .upload-zone .upload-text { font-size:0.88rem; color:#6b7280; }
+        .upload-zone .upload-text strong { color:#7c3aed; }
+        .upload-zone .upload-hint { font-size:0.75rem; color:#9ca3af; margin-top:4px; }
+        .upload-zone .file-name {
+            display:none; align-items:center; gap:8px;
+            padding:8px 14px; background:rgba(124,58,237,0.08);
+            border-radius:10px; font-size:0.85rem; color:#7c3aed; font-weight:500;
+        }
+        .upload-zone.has-file .file-name { display:inline-flex; }
+        .upload-zone.has-file .upload-icon-big,
+        .upload-zone.has-file .upload-text,
+        .upload-zone.has-file .upload-hint { display:none; }
+        .upload-zone input[type="file"] { display:none; }
+
+        /* ===== Buttons ===== */
+        .btn-row {
+            display:flex; gap:12px; margin-top:16px;
+        }
+        .btn-row .btn {
+            flex:1 1 0%; min-width:0;
+            padding:14px 20px; border:none; border-radius:14px;
+            font-size:0.92rem; font-weight:600; cursor:pointer;
+            transition: transform 0.15s, box-shadow 0.25s, opacity 0.2s;
+            display:inline-flex; align-items:center; justify-content:center; gap:8px;
+            white-space:nowrap;
+        }
+        .btn-row .btn:active { transform:scale(0.97); }
+        .btn-row .btn:disabled { opacity:0.5; cursor:not-allowed; transform:none; }
+
+        .btn-primary { background: linear-gradient(135deg,#7c3aed,#6d28d9); color:#fff; box-shadow: 0 4px 14px rgba(124,58,237,0.3); }
+        .btn-primary:hover:not(:disabled) { box-shadow:0 6px 24px rgba(124,58,237,0.4); }
+        .btn-secondary { background: linear-gradient(135deg,#0d9488,#0f766e); color:#fff; box-shadow: 0 4px 14px rgba(13,148,136,0.3); }
+        .btn-secondary:hover:not(:disabled) { box-shadow:0 6px 24px rgba(13,148,136,0.4); }
+        .btn-edit { background: linear-gradient(135deg,#f59e0b,#d97706); color:#fff; box-shadow: 0 4px 14px rgba(245,158,11,0.3); }
+        .btn-edit:hover:not(:disabled) { box-shadow:0 6px 24px rgba(245,158,11,0.4); }
+        .btn-success { background: linear-gradient(135deg,#10b981,#059669); color:#fff; box-shadow: 0 4px 14px rgba(16,185,129,0.3); }
+        .btn-success:hover:not(:disabled) { box-shadow:0 6px 24px rgba(16,185,129,0.4); }
+        .btn-outline { background: rgba(255,255,255,0.6); color:#374151; border:1.5px solid #e5e7eb; }
+        .btn-outline:hover:not(:disabled) { background:rgba(255,255,255,0.9); border-color:#d1d5db; }
+        .btn-danger { background: linear-gradient(135deg,#ef4444,#dc2626); color:#fff; box-shadow: 0 4px 14px rgba(239,68,68,0.3); }
+        .btn-danger:hover:not(:disabled) { box-shadow:0 6px 24px rgba(239,68,68,0.4); }
+        .btn-sm { padding:8px 14px; font-size:0.8rem; border-radius:10px; }
+
+        .spinner {
+            display:inline-block; width:18px; height:18px;
+            border:2.5px solid rgba(255,255,255,0.3); border-top-color:#fff;
+            border-radius:50%; animation:spin 0.6s linear infinite;
+        }
+        @keyframes spin { to { transform:rotate(360deg); } }
+
+        /* ===== Output ===== */
+        .output-area { margin-top:24px; display:none; }
+        .output-area.visible { display:block; }
+        .output-area.animate-in { animation:fadeSlideUp 0.35s ease-out; }
+        @keyframes fadeSlideUp { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+
+        /* Proxy→Clash */
+        .sub-section {
+            background: linear-gradient(135deg, rgba(124,58,237,0.06), rgba(109,40,217,0.04));
+            border:1px solid rgba(124,58,237,0.18);
+            border-radius:16px; padding:18px 20px; margin-bottom:20px;
+        }
+        .sub-section .sub-label { display:flex; align-items:center; gap:6px; font-size:0.85rem; font-weight:600; color:#6d28d9; margin-bottom:8px; }
+        .sub-section .sub-label svg { width:18px; height:18px; }
+        .sub-hint { font-size:0.78rem; color:#6b7280; margin-bottom:10px; line-height:1.5; }
+        .sub-url-box {
+            display:flex; align-items:center; gap:10px;
+            background: rgba(255,255,255,0.7);
+            border:1px solid #e5e7eb; border-radius:12px; padding:0 14px;
+        }
+        .sub-url-box input {
+            flex:1; border:none; background:transparent;
+            padding:12px 4px; font-size:0.85rem; color:#1f2937;
+            outline:none; font-family:"SF Mono","Fira Code",monospace; user-select:all;
+        }
+        .sub-url-box .btn-copy-sub {
+            flex-shrink:0; display:flex; align-items:center; gap:5px;
+            padding:8px 16px; border:none; border-radius:10px;
+            background: linear-gradient(135deg,#7c3aed,#6d28d9); color:#fff; font-size:0.8rem; font-weight:600;
+            cursor:pointer; transition: background 0.2s, box-shadow 0.2s;
+            box-shadow: 0 4px 12px rgba(124,58,237,0.25);
+        }
+        .sub-url-box .btn-copy-sub:hover { box-shadow:0 6px 20px rgba(124,58,237,0.35); }
+
+        .yaml-section summary {
+            cursor:pointer; font-size:0.85rem; font-weight:600; color:#374151;
+            padding:8px 0; user-select:none; display:flex; align-items:center; gap:6px;
+        }
+        .yaml-section summary::-webkit-details-marker { color:#9ca3af; }
+        .yaml-preview {
+            background: rgba(249,250,251,0.85);
+            border:1px solid #e5e7eb; border-radius:14px;
+            padding:18px 20px;
+            font-family:"SF Mono","Fira Code","Cascadia Code","Consolas",monospace;
+            font-size:0.78rem; line-height:1.55; color:#1f2937;
+            max-height:320px; overflow:auto; white-space:pre; tab-size:2;
+            user-select:all; margin-top:8px;
+        }
+        .yaml-preview::-webkit-scrollbar { width:6px; height:6px; }
+        .yaml-preview::-webkit-scrollbar-thumb { background:#d1d5db; border-radius:3px; }
+        .output-actions {
+            display:flex; gap:12px; margin-top:16px;
+        }
+        .output-actions .btn-action {
+            flex:1; padding:12px 20px; border:none; border-radius:12px;
+            font-size:0.85rem; font-weight:600; cursor:pointer;
+            display:inline-flex; align-items:center; justify-content:center; gap:8px;
+            transition: all 0.25s ease;
+            white-space:nowrap;
+            min-height:44px;
+        }
+        .output-actions .btn-action:active { transform:scale(0.97); }
+        .output-actions .btn-primary-act {
+            background: linear-gradient(135deg,#7c3aed,#6d28d9);
+            color:#fff;
+            box-shadow: 0 4px 14px rgba(124,58,237,0.25);
+        }
+        .output-actions .btn-primary-act:hover { box-shadow:0 6px 24px rgba(124,58,237,0.35); transform:translateY(-1px); }
+        .output-actions .btn-soft-act {
+            background: rgba(255,255,255,0.55);
+            color:#4b5563;
+            border:1.5px solid rgba(229,231,235,0.7);
+        }
+        .output-actions .btn-soft-act:hover {
+            background: rgba(255,255,255,0.85);
+            border-color:#c4b5fd;
+            color:#7c3aed;
+        }
+
+        /* Clash→Proxy results */
+        .proxy-results-header {
+            display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;
+        }
+        .proxy-results-header .result-count { font-size:0.85rem; font-weight:600; color:#374151; }
+        .proxy-results-header .result-count span { color:#7c3aed; }
+        .proxy-grid { display:flex; flex-direction:column; gap:12px; }
+        .proxy-card {
+            background: rgba(255,255,255,0.75);
+            border:1px solid #e5e7eb; border-radius:16px;
+            padding:16px 18px; transition: all 0.25s;
+            animation: cardSlide 0.3s ease-out backwards;
+        }
+        .proxy-card:hover { border-color:#d1d5db; box-shadow:0 4px 16px rgba(0,0,0,0.04); }
+        .proxy-card.error { border-left:3px solid #ef4444; }
+        .proxy-card.success { border-left:3px solid #10b981; }
+        .proxy-card .card-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+        .proxy-card .card-left { display:flex; align-items:center; gap:10px; min-width:0; }
+        .proxy-card .proto-badge {
+            display:inline-flex; align-items:center; gap:4px;
+            padding:3px 10px; border-radius:20px;
+            font-size:0.72rem; font-weight:700; text-transform:uppercase;
+            letter-spacing:0.03em; flex-shrink:0;
+        }
+        .proto-badge.vless { background:rgba(124,58,237,0.12); color:#7c3aed; }
+        .proto-badge.vmess { background:rgba(59,130,246,0.12); color:#2563eb; }
+        .proto-badge.ss { background:rgba(16,185,129,0.12); color:#059669; }
+        .proto-badge.ssr { background:rgba(245,158,11,0.12); color:#d97706; }
+        .proto-badge.trojan { background:rgba(239,68,68,0.12); color:#dc2626; }
+        .proto-badge.unknown { background:rgba(156,163,175,0.15); color:#6b7280; }
+        .proxy-card .card-name { font-size:0.85rem; font-weight:600; color:#1f2937; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+        .proxy-card .card-body { display:flex; align-items:center; gap:10px; }
+        .proxy-card .card-url {
+            flex:1; min-width:0;
+            font-family:"SF Mono","Fira Code","Cascadia Code","Consolas",monospace;
+            font-size:0.78rem; color:#6b7280;
+            overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+            padding:6px 10px; background:rgba(243,244,246,0.5); border-radius:8px; user-select:all;
+        }
+        .proxy-card .card-url:hover { overflow:visible; white-space:normal; word-break:break-all; }
+        .proxy-card .card-url.error-text { color:#ef4444; }
+        .proxy-card .card-actions { display:flex; gap:6px; flex-shrink:0; }
+        .proxy-card .card-actions .btn { padding:7px 12px; font-size:0.75rem; border-radius:8px; }
+        @keyframes cardSlide { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+        .copy-all-bar { display:flex; align-items:center; gap:12px; padding:12px 4px 0; border-top:1px solid #f3f4f6; margin-top:12px; }
+
+        /* ===== Empty State ===== */
+        .empty-state { text-align:center; padding:40px 20px; color:#9ca3af; }
+        .empty-state svg { width:48px; height:48px; stroke:#d1d5db; margin-bottom:12px; }
+        .empty-state p { font-size:0.9rem; }
+
+        /* ===== Privacy Notice ===== */
+        .privacy-notice {
+            display:flex; align-items:flex-start; gap:8px;
+            margin-top:24px; padding:14px 16px;
+            background:rgba(59,130,246,0.05);
+            border:1px solid rgba(59,130,246,0.12);
+            border-radius:12px; font-size:0.75rem; line-height:1.6; color:#6b7280;
+        }
+        .privacy-notice svg { width:16px; height:16px; flex-shrink:0; stroke:#60a5fa; margin-top:2px; }
+        .privacy-notice strong { color:#4b5563; }
+
+        /* ===== ✅ Top Toast Notification ===== */
+        .toast {
+            position:fixed; top:24px; left:50%; z-index:1000;
+            transform:translateX(-50%) translateY(-120px);
+            transition:transform 0.4s cubic-bezier(0.34,1.56,0.64,1), opacity 0.3s ease;
+            opacity:0; pointer-events:none;
+            max-width:520px; width:calc(100% - 48px);
+        }
+        .toast.show { transform:translateX(-50%) translateY(0); opacity:1; pointer-events:auto; }
+        .toast.fading {
+            transform:translateX(-50%) translateY(-30px);
+            opacity:0; pointer-events:none;
+            transition:transform 3s ease, opacity 3s ease;
+        }
+
+        .toast-inner {
+            display:flex; align-items:center; gap:12px;
+            padding:14px 20px;
+            background:rgba(255,255,255,0.88);
+            backdrop-filter:blur(16px); -webkit-backdrop-filter:blur(16px);
+            border:1px solid rgba(255,255,255,0.4);
+            border-radius:16px;
+            box-shadow:0 8px 32px rgba(0,0,0,0.10), 0 2px 8px rgba(0,0,0,0.04);
+            cursor:default;
+        }
+        .toast-inner .ti {
+            flex-shrink:0; width:28px; height:28px; border-radius:50%;
+            display:flex; align-items:center; justify-content:center;
+        }
+        .toast-inner .ti svg { width:15px; height:15px; stroke:#fff; stroke-width:2.8; stroke-linecap:round; stroke-linejoin:round; fill:none; }
+        .toast-inner .ti.success { background:linear-gradient(135deg,#10b981,#059669); }
+        .toast-inner .ti.error { background:linear-gradient(135deg,#ef4444,#dc2626); }
+        .toast-inner .ti.info { background:linear-gradient(135deg,#3b82f6,#2563eb); }
+        .toast-inner .tt { font-size:0.88rem; font-weight:600; color:#1f2937; flex-shrink:0; }
+        .toast-inner .tm { font-size:0.85rem; color:#6b7280; line-height:1.4; flex:1; min-width:0; }
+        .toast-inner .tm strong { color:#374151; }
+        .toast-inner .dismiss {
+            flex-shrink:0; width:24px; height:24px; border:none; border-radius:8px;
+            background:transparent; color:#9ca3af; cursor:pointer;
+            display:flex; align-items:center; justify-content:center;
+            transition:background 0.2s, color 0.2s;
+        }
+        .toast-inner .dismiss:hover { background:rgba(0,0,0,0.06); color:#6b7280; }
+        .toast-inner .dismiss svg { width:14px; height:14px; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; fill:none; }
+
+        /* ===== Responsive ===== */
+        @media (max-width:540px) {
+            body { padding:16px; padding-top:min(6vh,50px); }
+            .glass { padding:24px 16px; border-radius:22px; }
+            .header h1 { font-size:1.25rem; }
+            .btn-row { flex-direction:column; }
+            .output-actions { flex-direction:column; }
+            .sub-url-box { flex-direction:column; padding:12px 14px; }
+            .sub-url-box input { width:100%; padding:8px 4px; }
+            .sub-url-box .btn-copy-sub { width:100%; justify-content:center; }
+            .bg-deco .blob-1 { width:300px; height:300px; top:-80px; right:-60px; }
+            .bg-deco .blob-2 { width:250px; height:250px; bottom:-60px; left:-40px; }
+            .bg-deco .blob-3 { display:none; }
+            .proxy-card .card-body { flex-direction:column; align-items:stretch; }
+            .proxy-card .card-actions { justify-content:flex-end; }
+            .proxy-results-header { flex-direction:column; align-items:flex-start; gap:8px; }
+            .toast-inner { flex-wrap:wrap; }
+            .toast-inner .tm { width:100%; order:10; margin-top:2px; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- ===== Background ===== -->
+    <div class="bg-deco">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <!-- ===== Top Toast ===== -->
+    <div class="toast" id="toast">
+        <div class="toast-inner">
+            <div class="ti" id="toast-icon"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+            <span class="tt" id="toast-title"></span>
+            <span class="tm" id="toast-message"></span>
+            <button class="dismiss" id="toast-dismiss" aria-label="关闭">
+                <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <div class="glass-wrap">
+        <div class="glass">
+
+            <!-- ===== Header ===== -->
+            <div class="header">
+                <div class="icon">
+                    <svg viewBox="0 0 24 24">
+                        <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                        <path d="M2 17l10 5 10-5"/>
+                        <path d="M2 12l10 5 10-5"/>
+                        <path d="M16 4.5l4 2"/>
+                    </svg>
+                </div>
+                <h1>Proxy ↔ Clash 双向转换</h1>
+                <p>代理链接与 Clash 配置互转，实时转换，无需服务端存储</p>
+            </div>
+
+            <!-- ===== Mode Toggle ===== -->
+            <div class="mode-toggle" id="mode-toggle">
+                <div class="mode-slider left" id="mode-slider"></div>
+                <button class="mode-btn active" data-mode="to-clash">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;">
+                        <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                    </svg>
+                    代理 → Clash
+                </button>
+                <button class="mode-btn" data-mode="to-proxy">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;">
+                        <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+                    </svg>
+                    Clash → 代理
+                </button>
+            </div>
+
+            <!-- ===== PANEL 1: Proxy → Clash ===== -->
+            <div class="panel active" id="panel-to-clash">
+                <div class="proto-selector">
+                    <div class="proto-btn active" data-proto="vless">VLESS</div>
+                    <div class="proto-btn" data-proto="vmess">VMess</div>
+                    <div class="proto-btn" data-proto="ss">Shadowsocks</div>
+                    <div class="proto-btn" data-proto="ssr">SSR</div>
+                    <div class="proto-btn" data-proto="trojan">Trojan</div>
+                </div>
+
+                <div class="form-group">
+                    <div class="label-row">
+                        <label for="proxy-input">代理链接</label>
+                    </div>
+                    <div class="input-wrap" id="input-wrap">
+                        <svg viewBox="0 0 24 24">
+                            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+                        </svg>
+                        <input id="proxy-input" type="text"
+                            placeholder="vless://uuid@host:port?type=tcp&security=none#示例"
+                            autocomplete="off" spellcheck="false" />
+                    </div>
+                </div>
+
+                <div class="btn-row">
+                    <button class="btn btn-primary" id="btn-convert">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                        转换
+                    </button>
+                    <button class="btn btn-outline" id="btn-clear">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        清空
+                    </button>
+                </div>
+
+                <div class="output-area" id="output-to-clash">
+                    <div class="sub-section">
+                        <div class="sub-label">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                            订阅链接
+                        </div>
+                        <div class="sub-hint">将此链接添加到 Clash / Clash Meta 的「订阅」中，每次请求都会实时转换</div>
+                        <div class="sub-url-box">
+                            <input type="text" id="sub-url-input" readonly value="" />
+                            <button class="btn-copy-sub" id="btn-copy-sub">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                复制
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="yaml-section">
+                        <details>
+                            <summary>
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                                Clash 配置预览
+                            </summary>
+                            <div class="yaml-preview" id="yaml-preview"></div>
+                            <div class="output-actions">
+                                <button class="btn-action btn-primary-act" id="btn-download">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                    下载 YAML
+                                </button>
+                                <button class="btn-action btn-soft-act" id="btn-copy-yaml">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                    复制配置
+                                </button>
+                            </div>
+                        </details>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== PANEL 2: Clash → Proxy ===== -->
+            <div class="panel" id="panel-to-proxy">
+                <div class="form-group">
+                    <div class="label-row">
+                        <label for="yaml-input">Clash 配置 (YAML)</label>
+                        <span style="font-size:0.75rem;color:#9ca3af;" id="yaml-validate-hint"></span>
+                    </div>
+                    <div class="yaml-input-wrap">
+                        <textarea id="yaml-input" placeholder="粘贴 Clash 配置 YAML 内容&#10;&#10;示例:&#10;proxies:&#10;  - name: 示例节点&#10;    type: vless&#10;    server: example.com&#10;    port: 443&#10;    uuid: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx&#10;    network: ws&#10;    tls: true"></textarea>
+                    </div>
+                </div>
+
+                <div class="upload-zone" id="upload-zone">
+                    <input type="file" id="file-input" accept=".yaml,.yml,.txt" />
+                    <div class="upload-icon-big">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                    </div>
+                    <div class="upload-text">点击上传 <strong>.yaml</strong> 文件，或拖拽到此处</div>
+                    <div class="upload-hint">支持 Clash 完整配置或 proxies 列表</div>
+                    <div class="file-name" id="file-name">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                        <span id="file-name-text"></span>
+                    </div>
+                </div>
+
+                <div class="btn-row">
+                    <button class="btn btn-secondary" id="btn-to-url">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                        提取代理链接
+                    </button>
+                    <button class="btn btn-outline" id="btn-clear-yaml">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        清空
+                    </button>
+                </div>
+
+                <div class="output-area" id="output-to-proxy">
+                    <div class="proxy-results-header">
+                        <div class="result-count">共提取 <span id="result-count-num">0</span> 个代理链接</div>
+                        <button class="btn btn-sm btn-success" id="btn-copy-all">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                            复制全部
+                        </button>
+                    </div>
+                    <div class="proxy-grid" id="proxy-grid"></div>
+                    <div class="copy-all-bar" id="copy-all-bar" style="display:none;">
+                        <button class="btn btn-sm btn-outline" id="btn-download-urls">
+                            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                            下载全部
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ===== Privacy Notice ===== -->
+            <div class="privacy-notice">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                <span>本工具采用<strong>无状态架构</strong>，您提交的数据仅用于实时转换，<strong>不会以任何形式存储</strong>在服务端。处理完毕不保留任何痕迹。</span>
+            </div>
+
+        </div>
+    </div>
+
+    <script>
+        // =============================================================
+        //  DOM refs
+        // =============================================================
+        const modeBtns     = document.querySelectorAll('.mode-btn');
+        const modeSlider   = document.getElementById('mode-slider');
+        const panelToClash = document.getElementById('panel-to-clash');
+        const panelToProxy = document.getElementById('panel-to-proxy');
+
+        const protoBtns    = document.querySelectorAll('.proto-btn');
+        const input        = document.getElementById('proxy-input');
+        const inputWrap    = document.getElementById('input-wrap');
+        const btnConv      = document.getElementById('btn-convert');
+        const btnClear     = document.getElementById('btn-clear');
+        const btnDl        = document.getElementById('btn-download');
+        const btnCopyYaml  = document.getElementById('btn-copy-yaml');
+        const btnCopySub   = document.getElementById('btn-copy-sub');
+        const outputClash  = document.getElementById('output-to-clash');
+        const preview      = document.getElementById('yaml-preview');
+        const subInput     = document.getElementById('sub-url-input');
+
+        const yamlInput    = document.getElementById('yaml-input');
+        const validateHint = document.getElementById('yaml-validate-hint');
+        const uploadZone   = document.getElementById('upload-zone');
+        const fileInput    = document.getElementById('file-input');
+        const fileNameText = document.getElementById('file-name-text');
+        const btnToUrl     = document.getElementById('btn-to-url');
+        const btnClearYaml = document.getElementById('btn-clear-yaml');
+        const btnCopyAll   = document.getElementById('btn-copy-all');
+        const btnDlUrls    = document.getElementById('btn-download-urls');
+        const outputProxy  = document.getElementById('output-to-proxy');
+        const proxyGrid    = document.getElementById('proxy-grid');
+        const resultCount  = document.getElementById('result-count-num');
+
+        // Toast
+        const toast         = document.getElementById('toast');
+        const toastIcon     = document.getElementById('toast-icon');
+        const toastIconSvg  = toastIcon.querySelector('svg');
+        const toastTitle    = document.getElementById('toast-title');
+        const toastMessage  = document.getElementById('toast-message');
+        const toastDismiss  = document.getElementById('toast-dismiss');
+
+        // ---- State ----
+        let currentMode = 'to-clash';
+        let locked = false;
+        let currentYaml = '';
+        let currentFilename = 'clash_config.yaml';
+        let activeProto = 'vless';
+        let currentProxies = [];
+
+        let toastTimer = null;
+        let toastHovered = false;
+
+        const PREFIX_MAP = {
+            vless:'vless://', vmess:'vmess://', ss:'ss://', ssr:'ssr://', trojan:'trojan://',
+        };
+        const PLACEHOLDERS = {
+            vless:'vless://uuid@host:port?type=tcp&security=none#示例',
+            vmess:'vmess://eyJ2IjoiMiIsInBzIjoi...',
+            ss:'ss://YWVzLTI1Ni1nY206cGFzcw@host:8443#示例',
+            ssr:'ssr://MTI3LjAuMC4xOjEyMzQ6...',
+            trojan:'trojan://password@host:port?sni=example.com#示例',
+        };
+
+        // =============================================================
+        //  ✅ Top Toast Notification
+        //  - Slides down from top (subtle, spring)
+        //  - Hover → stays, no auto-dismiss
+        //  - Leave → 3s fade out
+        //  - Click X → immediate dismiss
+        // =============================================================
+
+        function showToast(type, title, message) {
+            // type: 'success' | 'error' | 'info'
+
+            const icons = {
+                success: '<polyline points="20 6 9 17 4 12"/>',
+                error: '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>',
+                info: '<circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>',
+            };
+
+            toastIcon.className = 'ti ' + type;
+            toastIconSvg.innerHTML = icons[type] || icons.info;
+            toastTitle.textContent = title;
+            toastMessage.innerHTML = message;
+
+            clearTimeout(toastTimer);
+            toast.classList.remove('fading', 'show');
+            toastHovered = false;
+
+            void toast.offsetHeight;
+            toast.classList.add('show');
+
+            startDismissTimer();
+        }
+
+        function startDismissTimer() {
+            clearTimeout(toastTimer);
+            if (!toastHovered) {
+                // Stay visible 2s, then 3s fade
+                toastTimer = setTimeout(() => {
+                    toast.classList.add('fading');
+                }, 2000);
+            }
+        }
+
+        // Hover: cancel fade, keep visible
+        toast.addEventListener('mouseenter', () => {
+            toastHovered = true;
+            clearTimeout(toastTimer);
+            toast.classList.remove('fading');
+        });
+
+        // Leave: fade over 3s immediately
+        toast.addEventListener('mouseleave', () => {
+            toastHovered = false;
+            toast.classList.add('fading');
+        });
+
+        // Dismiss button: instant
+        toastDismiss.addEventListener('click', () => {
+            clearTimeout(toastTimer);
+            toast.classList.add('fading');
+        });
+
+        // =============================================================
+        //  Mode Toggle
+        // =============================================================
+        function switchMode(mode) {
+            currentMode = mode;
+            modeBtns.forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+            modeSlider.className = 'mode-slider ' + (mode === 'to-clash' ? 'left' : 'right');
+            panelToClash.classList.toggle('active', mode === 'to-clash');
+            panelToProxy.classList.toggle('active', mode === 'to-proxy');
+            document.querySelector('.glass-wrap').classList.toggle('theme-teal', mode === 'to-proxy');
+            (mode === 'to-clash' ? input : yamlInput).focus();
+        }
+
+        modeBtns.forEach(btn => {
+            btn.addEventListener('click', () => switchMode(btn.dataset.mode));
+        });
+
+        // =============================================================
+        //  Copy helper
+        // =============================================================
+        async function copyText(text) {
+            try {
+                await navigator.clipboard.writeText(text);
+            } catch {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.position = 'fixed'; ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+            }
+        }
+
+        // =============================================================
+        //   PANEL 1: Proxy → Clash
+        // =============================================================
+
+        protoBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (locked) return;
+                protoBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                activeProto = btn.dataset.proto;
+                input.placeholder = PLACEHOLDERS[activeProto] || PLACEHOLDERS.vless;
+            });
+        });
+
+        function lockInputs() {
+            locked = true;
+            input.disabled = true;
+            inputWrap.classList.add('locked');
+            protoBtns.forEach(b => b.classList.add('disabled'));
+        }
+
+        function unlockInputs() {
+            locked = false;
+            input.disabled = false;
+            inputWrap.classList.remove('locked');
+            protoBtns.forEach(b => b.classList.remove('disabled'));
+            input.focus();
+        }
+
+        async function convert() {
+            if (locked) {
+                unlockInputs();
+                outputClash.classList.remove('visible');
+                preview.textContent = '';
+                subInput.value = '';
+                currentYaml = '';
+                btnConv.disabled = false;
+                btnConv.className = 'btn btn-primary';
+                btnConv.innerHTML = resetConvBtnHTML();
+                return;
+            }
+
+            const url = input.value.trim();
+            if (!url) {
+                showToast('info', '提示', '请先输入代理链接');
+                return;
+            }
+
+            const expectedPrefix = PREFIX_MAP[activeProto];
+            if (!url.startsWith(expectedPrefix)) {
+                showToast('error', '协议不匹配',
+                    `选择了 <strong>${activeProto.toUpperCase()}</strong>，但链接以 <code>${url.slice(0,12)}…</code> 开头`);
+                return;
+            }
+
+            btnConv.disabled = true;
+            btnConv.innerHTML = '<span class="spinner"></span> 转换中…';
+
+            try {
+                const resp = await fetch('/api/convert', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url }),
+                });
+                const data = await resp.json();
+
+                if (!resp.ok) {
+                    showToast('error', '转换失败', data.error || '服务器返回错误');
+                    btnConv.disabled = false;
+                    btnConv.innerHTML = resetConvBtnHTML();
+                    return;
+                }
+
+                currentYaml     = data.yaml;
+                currentFilename = data.filename;
+                preview.textContent = data.yaml;
+                subInput.value      = data.sub_url;
+
+                outputClash.classList.add('visible', 'animate-in');
+                setTimeout(() => outputClash.classList.remove('animate-in'), 400);
+
+                showToast('success', '转换成功',
+                    `已生成 <strong>${data.protocol}</strong> 配置，共 ${data.yaml.length} 字节`);
+
+                lockInputs();
+                btnConv.disabled = false;
+                btnConv.className = 'btn btn-edit';
+                btnConv.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> 重新编辑`;
+
+            } catch {
+                showToast('error', '网络错误', '无法连接到服务器，请检查后端是否运行');
+                btnConv.disabled = false;
+                btnConv.innerHTML = resetConvBtnHTML();
+            }
+        }
+
+        function resetConvBtnHTML() {
+            return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> 转换`;
+        }
+
+        function clearAll() {
+            unlockInputs();
+            input.value = '';
+            outputClash.classList.remove('visible');
+            preview.textContent = '';
+            subInput.value = '';
+            currentYaml = '';
+            currentFilename = 'clash_config.yaml';
+            btnConv.disabled = false;
+            btnConv.className = 'btn btn-primary';
+            btnConv.innerHTML = resetConvBtnHTML();
+            input.focus();
+        }
+
+        function downloadYaml() {
+            if (!currentYaml) { showToast('info', '提示', '请先进行转换'); return; }
+            const blob = new Blob([currentYaml], { type: 'application/yaml' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob); a.download = currentFilename;
+            document.body.appendChild(a); a.click();
+            document.body.removeChild(a);
+            showToast('success', '下载成功', `文件 ${currentFilename} 已开始下载`);
+        }
+
+        async function copyYaml() {
+            if (!currentYaml) { showToast('info', '提示', '请先进行转换'); return; }
+            await copyText(currentYaml);
+            showToast('success', '已复制', 'Clash 配置已复制到剪贴板');
+        }
+
+        function copySubscriptionUrl() {
+            const val = subInput.value;
+            if (!val) { showToast('info', '提示', '请先进行转换'); return; }
+            copyText(val);
+            showToast('success', '已复制', '订阅链接已复制到剪贴板');
+        }
+
+        // =============================================================
+        //   PANEL 2: Clash → Proxy
+        // =============================================================
+
+        // ---- YAML Validation ----
+        let validationTimer = null;
+        yamlInput.addEventListener('input', () => {
+            clearTimeout(validationTimer);
+            yamlInput.classList.remove('input-error');
+            validateHint.textContent = '';
+
+            validationTimer = setTimeout(() => {
+                const text = yamlInput.value.trim();
+                if (!text) { validateHint.textContent = ''; return; }
+                const result = validateYamlBasic(text);
+                if (!result.valid) {
+                    yamlInput.classList.add('input-error');
+                    validateHint.textContent = result.error;
+                    validateHint.style.color = '#ef4444';
+                } else {
+                    validateHint.textContent = `✓ 格式有效·${result.proxyCount} 个代理`;
+                    validateHint.style.color = '#10b981';
+                }
+            }, 400);
+        });
+
+        function validateYamlBasic(text) {
+            const trimmed = text.trim();
+            if (!trimmed.includes(':')) {
+                return { valid: false, error: '不是有效的 YAML（缺少冒号）' };
+            }
+            const proxyMatches = trimmed.match(/^\s+-\s+name:/gm);
+            const count = proxyMatches ? proxyMatches.length : 0;
+            if (count === 0) {
+                if (!trimmed.includes('proxies')) {
+                    return { valid: false, error: '未找到 proxies 配置项' };
+                }
+                if (!trimmed.match(/name:\s*.+/)) {
+                    return { valid: false, error: 'proxies 列表为空，请检查格式' };
+                }
+            }
+            return { valid: true, proxyCount: Math.max(count, 1) };
+        }
+
+        // ---- File Upload ----
+        uploadZone.addEventListener('click', () => fileInput.click());
+
+        uploadZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('dragover');
+        });
+        uploadZone.addEventListener('dragleave', () => {
+            uploadZone.classList.remove('dragover');
+        });
+        uploadZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
+        });
+
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files.length > 0) handleFile(fileInput.files[0]);
+        });
+
+        function handleFile(file) {
+            if (!file.name.match(/\.(yaml|yml|txt)$/i)) {
+                showToast('error', '文件格式不支持', '请上传 .yaml / .yml / .txt 文件');
+                return;
+            }
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                yamlInput.value = e.target.result;
+                uploadZone.classList.add('has-file');
+                fileNameText.textContent = file.name;
+                yamlInput.dispatchEvent(new Event('input'));
+                toUrl();
+            };
+            reader.readAsText(file);
+        }
+
+        function clearYaml() {
+            yamlInput.value = '';
+            yamlInput.classList.remove('input-error');
+            validateHint.textContent = '';
+            outputProxy.classList.remove('visible');
+            proxyGrid.innerHTML = '';
+            uploadZone.classList.remove('has-file');
+            fileInput.value = '';
+            currentProxies = [];
+            yamlInput.focus();
+        }
+
+        async function toUrl() {
+            const yaml = yamlInput.value.trim();
+            if (!yaml) {
+                showToast('info', '提示', '请先输入或上传 YAML 内容');
+                return;
+            }
+
+            const validation = validateYamlBasic(yaml);
+            if (!validation.valid) {
+                showToast('error', '格式校验未通过', validation.error);
+                yamlInput.classList.add('input-error');
+                return;
+            }
+
+            btnToUrl.disabled = true;
+            btnToUrl.innerHTML = '<span class="spinner"></span> 提取中…';
+
+            try {
+                const resp = await fetch('/api/to-url', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ yaml }),
+                });
+                const data = await resp.json();
+
+                btnToUrl.disabled = false;
+                btnToUrl.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg> 提取代理链接`;
+
+                if (!resp.ok) {
+                    showToast('error', '提取失败', data.error || '服务器返回错误');
+                    outputProxy.classList.remove('visible');
+                    return;
+                }
+
+                currentProxies = data.proxies || [];
+                renderProxyResults(currentProxies);
+
+                outputProxy.classList.add('visible', 'animate-in');
+                setTimeout(() => outputProxy.classList.remove('animate-in'), 400);
+
+                const validCount = currentProxies.filter(p => p.url).length;
+                showToast('success', '提取成功',
+                    `共 <strong>${currentProxies.length}</strong> 个代理，<strong>${validCount}</strong> 个有效`);
+
+            } catch {
+                btnToUrl.disabled = false;
+                btnToUrl.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg> 提取代理链接`;
+                showToast('error', '网络错误', '无法连接到服务器，请检查后端是否运行');
+                outputProxy.classList.remove('visible');
+            }
+        }
+
+        function renderProxyResults(proxies) {
+            const valid = proxies.filter(p => p.url);
+            resultCount.textContent = valid.length;
+
+            if (valid.length === 0) {
+                proxyGrid.innerHTML = `<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><p>未找到可转换的代理配置</p></div>`;
+                document.getElementById('copy-all-bar').style.display = 'none';
+                return;
+            }
+
+            document.getElementById('copy-all-bar').style.display = 'flex';
+
+            let html = '';
+            proxies.forEach((proxy, index) => {
+                const isError = !proxy.url;
+                const cardClass = isError ? 'proxy-card error' : 'proxy-card success';
+                const typeClass = isError ? 'unknown' : (proxy.type || 'unknown');
+                const typeLabels = { vless:'VLESS', vmess:'VMess', ss:'SS', ssr:'SSR', trojan:'Trojan' };
+                const typeLabel = typeLabels[proxy.type] || proxy.type || '未知';
+
+                html += `<div class="${cardClass}" style="animation-delay:${index * 0.05}s">
+                    <div class="card-top">
+                        <div class="card-left">
+                            <span class="proto-badge ${typeClass}">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    ${isError ? '<circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>' : '<path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>'}
+                                </svg>
+                                ${typeLabel}
+                            </span>
+                            <span class="card-name" title="${escapeHtml(proxy.name)}">${escapeHtml(proxy.name)}</span>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="card-url ${isError ? 'error-text' : ''}" title="${escapeHtml(proxy.url || proxy.error || '')}">
+                            ${isError ? '⚠ ' + escapeHtml(proxy.error) : escapeHtml(proxy.url)}
+                        </div>
+                        ${!isError ? `<div class="card-actions">
+                            <button class="btn btn-success btn-sm copy-one-btn" data-url="${escapeHtml(proxy.url)}">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+                                复制
+                            </button>
+                        </div>` : ''}
+                    </div>
+                </div>`;
+            });
+
+            proxyGrid.innerHTML = html;
+
+            proxyGrid.querySelectorAll('.copy-one-btn').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    await copyText(btn.dataset.url);
+                    showToast('success', '已复制', '代理链接已复制到剪贴板');
+                });
+            });
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            const d = document.createElement('div');
+            d.textContent = str;
+            return d.innerHTML;
+        }
+
+        async function copyAllUrls() {
+            const urls = currentProxies.filter(p => p.url).map(p => p.url);
+            if (urls.length === 0) { showToast('info', '提示', '没有可复制的链接'); return; }
+            await copyText(urls.join('\n'));
+            showToast('success', '已复制', `已复制 ${urls.length} 个代理链接到剪贴板`);
+        }
+
+        function downloadUrls() {
+            const urls = currentProxies.filter(p => p.url).map(p => p.url);
+            if (urls.length === 0) { showToast('info', '提示', '没有可下载的链接'); return; }
+            const blob = new Blob([urls.join('\n')], { type: 'text/plain' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob); a.download = 'proxies.txt';
+            document.body.appendChild(a); a.click();
+            document.body.removeChild(a);
+            showToast('success', '下载成功', `共 ${urls.length} 个链接已开始下载`);
+        }
+
+        // =============================================================
+        //  Event Binding
+        // =============================================================
+        btnConv.addEventListener('click', convert);
+        btnClear.addEventListener('click', clearAll);
+        btnDl.addEventListener('click', downloadYaml);
+        btnCopyYaml.addEventListener('click', copyYaml);
+        btnCopySub.addEventListener('click', copySubscriptionUrl);
+
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !locked) convert();
+        });
+
+        btnToUrl.addEventListener('click', toUrl);
+        btnClearYaml.addEventListener('click', clearYaml);
+        btnCopyAll.addEventListener('click', copyAllUrls);
+        btnDlUrls.addEventListener('click', downloadUrls);
+
+        yamlInput.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault();
+                toUrl();
+            }
+        });
+
+        input.focus();
+    </script>
+</body>
+</html>

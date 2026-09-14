@@ -1,0 +1,91 @@
+========== 1. VLESS convert ==========
+port: 7890
+socks-port: 7891
+allow-lan: true
+mode: rule
+log-level: warning
+proxies:
+- name: Test
+  type: vless
+  server: example.com
+  port: 443
+  uuid: 892c6822-3526-46ae-9eca-19ea1b3913f3
+  network: ws
+  tls: true
+  udp: true
+  servername: example.com
+  ws-opts:
+    path: /ray
+proxy-groups:
+- name: Proxy
+  type: select
+  proxies:
+  - Test
+rules:
+- MATCH,Proxy
+
+sub_url = http://127.0.0.1:5055/api/sub?d=e74tRZJB9lC2H6cbCLBdUnkbbgXdAGIXgjV532xnUnJzyH5ugcU403z4BsM1Q8ak8daeB6G8QuLtiuvwTNLQ_S5qzNJygnc7VsVxBaR8bJR5MsfvdXvjYHqRuhpHPnLfjAoCup8pHOWsT3CEdocqS7DlebTyE0BSqfpRryWI
+========== 2. VLESS sub fetch ==========
+proxies:
+- name: Test
+  type: vless
+  server: example.com
+  port: 443
+  uuid: 892c6822-3526-46ae-9eca-19ea1b3913f3
+  network: ws
+  tls: true
+  udp: true
+  servername: example.com
+  ws-opts:
+    path: /ray
+
+========== 3. VMess convert ==========
+port: 7890
+socks-port: 7891
+allow-lan: true
+mode: rule
+log-level: warning
+proxies:
+- name: vm
+  type: vmess
+  server: h.com
+  port: 443
+  uuid: 11111111-1111-1111-1111-111111111111
+  alterId: 0
+  cipher: auto
+  network: ws
+  tls: true
+  udp: true
+proxy-groups:
+- name: Proxy
+  type: select
+  proxies:
+  - vm
+rules:
+- MATCH,Proxy
+
+========== 4. Trojan convert ==========
+port: 7890
+socks-port: 7891
+allow-lan: true
+mode: rule
+log-level: warning
+proxies:
+- name: t1
+  type: trojan
+  server: t.example.com
+  port: 443
+  password: pass123
+  udp: true
+  sni: t.example.com
+proxy-groups:
+- name: Proxy
+  type: select
+  proxies:
+  - t1
+rules:
+- MATCH,Proxy
+
+========== 5. Clash YAML -> URLs ==========
+vless => vless://892c6822-3526-46ae-9eca-19ea1b3913f3@x.com:443?type=ws&security=tls#pp
+DONE
