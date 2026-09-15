@@ -169,13 +169,20 @@ app.MapPost("/api/to-url", (ToUrlReq req) =>
 // 返回仅含 proxies 列表的 YAML 文本（无状态，不做缓存），
 // 可直接作为 Clash 客户端的订阅地址。
 // ------------------------------------------------------------------
-app.MapGet("/api/sub", async (HttpContext ctx) =>
+// ⚠️ d / url / key 三个参数**必须声明为可空（string?）**，切勿"顺手"改成非可空。
+// 原因：Minimal API 会把「非可空 + 无默认值」的参数视为必填，在进入本委托之前就由框架
+// 返回 400（空响应体），从而顶掉下面这些自定义中文提示；更严重的是，只带
+// ?url=<明文链接> 的旧版订阅请求中 d 天然缺失，会被框架整体拦掉，导致旧订阅全部失效。
+// 可空声明只影响「参数缺席」这一种情况（框架 400 → 交回本方法自行判断）；
+// 参数存在时取到的值与原先手写 ctx.Request.Query[...] 完全一致（已实测：真实 114 字符
+// 密文逐字一致，含空串 / 重复值 / 特殊字符等边界场景）。
+app.MapGet("/api/sub", async (HttpContext ctx, string? d, string? url, string? key) =>
 {
     // 防滥用校验：若配置了 ACCESS_KEY，则要求请求通过 ?key= 查询参数
     // 或 X-Access-Key 请求头携带匹配的密钥，否则返回 401。
     if (!string.IsNullOrEmpty(accessKey))
     {
-        var provided = ctx.Request.Query["key"].ToString();
+        var provided = key;
         if (string.IsNullOrEmpty(provided))
             provided = ctx.Request.Headers["X-Access-Key"].ToString();
         if (provided != accessKey)
@@ -188,9 +195,6 @@ app.MapGet("/api/sub", async (HttpContext ctx) =>
     }
 
     // 优先使用加密参数 d；不存在时回退到旧版明文 url 参数。
-    var d = ctx.Request.Query["d"].ToString();
-    var urlParam = ctx.Request.Query["url"].ToString();
-
     string rawUrl;
     if (!string.IsNullOrEmpty(d))
     {
@@ -207,10 +211,10 @@ app.MapGet("/api/sub", async (HttpContext ctx) =>
             return;
         }
     }
-    else if (!string.IsNullOrEmpty(urlParam))
+    else if (!string.IsNullOrEmpty(url))
     {
         // 兼容旧版明文订阅链接。
-        rawUrl = urlParam;
+        rawUrl = url;
     }
     else
     {
@@ -240,15 +244,30 @@ app.MapGet("/api/sub", async (HttpContext ctx) =>
     ctx.Response.Headers.CacheControl = "no-cache, no-store, must-revalidate";
     ctx.Response.Headers["Subscription-Userinfo"] = "upload=0; download=0; total=0; expire=0";
     await ctx.Response.WriteAsync(yaml);
-});
+})
+// 以下元数据声明用于让本端点出现在 Swagger/OpenAPI 文档中，并暴露 d / url / key 三个查询参数。
+// 必要性：本端点完全手写 ctx.Response，委托返回非泛型 Task 且无返回值，若没有这些元数据，
+// Swashbuckle 既拿不到 ProducesResponseTypeMetadata 也无法从返回类型推断，
+// 会直接跳过该端点（表现为"README 里有介绍、Swagger 里却找不到"）。
+// 注：.Produces<>() 只影响文档生成，不会接管响应类型（实测即使请求带
+// Accept: application/json，响应仍是 text/plain; charset=utf-8，无内容协商）。
+.Produces<string>(StatusCodes.Status200OK, "text/plain")
+.Produces<string>(StatusCodes.Status400BadRequest, "text/plain")
+.Produces<string>(StatusCodes.Status401Unauthorized, "text/plain")
+.WithSummary("订阅端点：返回仅含 proxies 的 Clash 订阅 YAML")
+.WithDescription("优先使用加密参数 d（AES-256-GCM，URL-safe Base64）；" +
+                 "兼容旧版明文参数 url；配置 ACCESS_KEY 后需通过 ?key= 或 X-Access-Key 请求头携带。" +
+                 "响应为纯文本 YAML，可直接作为 Clash 客户端的订阅地址。");
 
 // 旧版 /api/sub/<id> 路径格式的兼容端点：直接提示用户重新生成订阅链接。
+// ExcludeFromDescription：该端点仅为兜底提示，不应出现在 Swagger 文档中误导使用者。
 app.MapGet("/api/sub/{*fallback}", async (HttpContext ctx) =>
 {
     ctx.Response.StatusCode = 400;
     ctx.Response.ContentType = "text/plain; charset=utf-8";
     await ctx.Response.WriteAsync("错误: 订阅链接格式已更新，请重新生成");
-});
+})
+.ExcludeFromDescription();
 
 app.Run();
 
