@@ -46,23 +46,28 @@
 
 ```
 clash-converter-csharp/
-├── clash-converter-csharp.csproj   # 主工程（net8.0 Web SDK）
-├── Program.cs                      # 入口：3 个 API 端点 + 静态托管 + 转发头
-├── Converter.cs                    # 核心：5 协议双向解析/生成 + YAML 序列化
-├── Crypto.cs                       # AES-256-GCM 加密（SHA-256 密钥派生）
-├── Properties/                     # 运行时配置（自动生成）
-├── wwwroot/
-│   ├── index.html                  # 前端页面
-│   └── static/favicon.ico
-├── Dockerfile / docker-compose.yml # 容器化部署
-├── clash-converter-csharp.slnx     # 解决方案（含测试工程）
+├── clash-converter/                # 主工程（net8.0 Web SDK）
+│   ├── clash-converter-csharp.csproj
+│   ├── Program.cs                  # 入口：3 个 API 端点 + 静态托管 + 转发头
+│   ├── Converter.cs                # 核心：5 协议双向解析/生成 + YAML 序列化
+│   ├── Crypto.cs                   # AES-256-GCM 加密（SHA-256 密钥派生）
+│   ├── Properties/                 # launchSettings.json（端口/环境）
+│   ├── wwwroot/
+│   │   ├── index.html              # 前端页面
+│   │   └── static/favicon.ico
+│   ├── Dockerfile                  # 多阶段构建（SDK 构建 → ASP.NET 运行时）
+│   ├── docker-compose.yml          # compose 编排
+│   └── .dockerignore               # 排除 bin/obj/.vs/*.user/Tests 等
+├── clash-converter-csharp.Tests/   # 单元测试工程（xUnit）
+│   ├── clash-converter-csharp.Tests.csproj
+│   ├── CryptoTests.cs
+│   ├── ConverterProtocolTests.cs
+│   ├── ConverterRoundTripTests.cs
+│   ├── YamlTests.cs
+│   └── TestHelpers.cs              # 共享测试辅助
+├── clash-converter-csharp.slnx     # 解决方案（含主 + 测试两个工程）
+├── LICENSE.txt                     # MIT 许可证
 └── README.md
-
-clash-converter-csharp.Tests/       # 单元测试工程（xUnit）
-    ├── CryptoTests.cs
-    ├── ConverterProtocolTests.cs
-    ├── ConverterRoundTripTests.cs
-    └── YamlTests.cs
 ```
 
 ---
@@ -131,7 +136,8 @@ clash-converter-csharp.Tests/       # 单元测试工程（xUnit）
 前置：安装 [.NET 8 SDK](https://dotnet.microsoft.com/download)。
 
 ```powershell
-cd clash-converter-csharp
+# 在主工程目录下运行（自动找到 clash-converter-csharp.csproj）
+cd clash-converter
 $env:ENCRYPTION_KEY="你的随机字符串"
 
 # 直接 run：会读取 Properties/launchSettings.json
@@ -149,6 +155,9 @@ dotnet run --urls "http://0.0.0.0:5000"
 ## 容器部署
 
 ```bash
+# 注意：Dockerfile 和 docker-compose.yml 位于 clash-converter/ 子目录
+cd clash-converter
+
 # 构建并启动
 docker compose up -d --build
 

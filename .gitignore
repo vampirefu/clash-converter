@@ -9,3 +9,9 @@ obj/
 **/testout.txt
 .DS_Store
 /.workbuddy
+/scripts
+/imginspect.txt
+/dockerps.txt
+/dockerlog.txt
+/dockerinspect.txt
+/clash-converter/Properties/PublishProfiles
