@@ -8,3 +8,4 @@ obj/
 /smoketest.ps1
 **/testout.txt
 .DS_Store
+/.workbuddy

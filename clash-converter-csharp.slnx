@@ -1,4 +1,4 @@
 <Solution>
-  <Project Path="clash-converter-csharp.csproj" />
-  <Project Path="..\clash-converter-csharp.Tests\clash-converter-csharp.Tests.csproj" />
+  <Project Path="clash-converter\clash-converter-csharp.csproj" />
+  <Project Path="clash-converter-csharp.Tests\clash-converter-csharp.Tests.csproj" />
 </Solution>

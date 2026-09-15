@@ -109,7 +109,7 @@ clash-converter-csharp.Tests/       # 单元测试工程（xUnit）
 - **Swagger UI**：`http://<host>:<port>/swagger`
 - **OpenAPI 描述文件**：`http://<host>:<port>/swagger/v1/swagger.json`
 
-> Swagger 默认**始终开启**（含生产环境），方便随时调试。若只需在开发期启用，可在 `Program.cs` 中用 `app.Environment.IsDevelopment()` 包裹 `UseSwagger()` 与 `UseSwaggerUI()` 两行。
+> Swagger 仅在**开发环境**（`ASPNETCORE_ENVIRONMENT=Development`）开启，生产部署不会暴露 `/swagger`。本地 `dotnet run` 默认即为开发环境，可直接访问。
 
 ---
 
@@ -117,8 +117,9 @@ clash-converter-csharp.Tests/       # 单元测试工程（xUnit）
 
 | 环境变量 / 参数 | 默认值 | 说明 |
 |----------------|--------|------|
-| `PORT` | `5000` | 监听端口（也可用首个命令行参数指定） |
+| `PORT` | 见左说明 | 监听端口。优先级：`PORT` 环境变量 → 首个数字命令行参数 → `launchSettings.json` / `ASPNETCORE_URLS` / `--urls` → 兜底 `5000`。尊重 `ASPNETCORE_URLS` 使 VS 调试能按 `launchSettings.json` 选端口 |
 | `ENCRYPTION_KEY` | 未设置则生成临时密钥 | 订阅加密密钥。未设置时每次重启都会生成新密钥，导致**旧订阅链接失效**，生产环境务必设置 |
+| `ACCESS_KEY` | 未设置则公开 | `/api/sub` 基础防护：设置后订阅端点要求携带匹配的 `?key=` 或 `X-Access-Key` 头，否则返回 401；生成的订阅链接会自动附带该 key |
 
 密钥派生：`SHA-256(ENCRYPTION_KEY)` → 32 字节 AES 密钥。
 密文布局：`[12B nonce][16B GCM tag][ciphertext]`，再做 URL-safe base64（无填充）。
@@ -132,10 +133,16 @@ clash-converter-csharp.Tests/       # 单元测试工程（xUnit）
 ```powershell
 cd clash-converter-csharp
 $env:ENCRYPTION_KEY="你的随机字符串"
-dotnet run -c Release --urls "http://0.0.0.0:5000"
-# 浏览器打开 http://127.0.0.1:5000
-# 交互式 API 文档：http://127.0.0.1:5000/swagger
+
+# 直接 run：会读取 Properties/launchSettings.json
+# （环境=Development，Swagger 开启，端口取 launchSettings 的 applicationUrl）
+dotnet run
+
+# 或显式指定端口（服务器 / 容器场景）
+dotnet run --urls "http://0.0.0.0:5000"
 ```
+
+在 Visual Studio 中按 F5 调试时，会依据 `Properties/launchSettings.json` 启动：环境为 `Development`（Swagger 开启），并**自动打开浏览器到 Swagger 页面**（由该文件的 `launchUrl` 决定），监听端口由 `applicationUrl` 决定。
 
 ---
 
@@ -176,7 +183,7 @@ dotnet test
 ## 已知局限
 
 - 正向 `/api/convert` 一次只处理单个链接，不支持多链接批量（反向 `/api/to-url` 已支持批量）。
-- 无鉴权 / 速率限制：`/api/sub` 为公开端点，任何拿到加密串的人都可拉取。
+- `/api/sub` 可配置访问密钥（`ACCESS_KEY`）做基础防滥用；未配置时仍保持公开（向后兼容）。`/api/convert`、`/api/to-url` 暂未加任何防护。
 - 前端输入的 YAML 校验为前端浅校验，不保证字段合法性。
 
 ---

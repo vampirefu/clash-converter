@@ -1,12 +1,15 @@
 {
+  "$schema": "https://json.schemastore.org/launchsettings.json",
   "profiles": {
     "clash-converter-csharp": {
       "commandName": "Project",
+      "dotnetRunMessages": true,
       "launchBrowser": true,
+      "launchUrl": "swagger",
+      "applicationUrl": "http://localhost:55813",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
-      },
-      "applicationUrl": "https://localhost:55812;http://localhost:55813"
+      }
     }
   }
 }
